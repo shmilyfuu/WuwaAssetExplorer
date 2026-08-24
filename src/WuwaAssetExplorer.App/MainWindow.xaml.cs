@@ -19,16 +19,29 @@ public sealed partial class MainWindow : Window
 
     public MainWindow()
     {
+        StartupLog.Write("MainWindow constructor entered");
+        StartupLog.Write("MainWindow InitializeComponent starting");
         InitializeComponent();
+        StartupLog.Write("MainWindow XAML initialized");
 
         Title = "WuwaAssetExplorer";
+        StartupLog.Write("MainWindow title set");
+
         SystemBackdrop = new MicaBackdrop();
+        StartupLog.Write("MainWindow Mica configured");
+
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
+        StartupLog.Write("MainWindow custom title bar configured");
 
         AppWindow.Resize(new SizeInt32(1120, 760));
+        StartupLog.Write("MainWindow resized");
+
         RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
+        StartupLog.Write("MainWindow initial navigation selected");
+
         _ = InitializeAsync();
+        StartupLog.Write("MainWindow async initialization queued");
     }
 
     private async Task InitializeAsync()
@@ -38,9 +51,11 @@ public sealed partial class MainWindow : Window
             _settings = await _settingsService.LoadAsync();
             PaksPathTextBox.Text = _settings.PaksPath ?? string.Empty;
             AesEndpointTextBox.Text = _settings.AesEndpoint;
+            StartupLog.Write("MainWindow settings loaded");
         }
         catch (Exception ex)
         {
+            StartupLog.Write("MainWindow settings load failed", ex);
             ShowLoadMessage("便携数据目录不可用", ex.Message, InfoBarSeverity.Error);
         }
     }
