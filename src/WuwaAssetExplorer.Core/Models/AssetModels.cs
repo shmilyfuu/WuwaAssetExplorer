@@ -12,6 +12,29 @@ public sealed record AssetEntry(string Name, string FullPath, string Extension)
     }
 }
 
+public sealed record AssetBrowserEntry(
+    string Name,
+    string FullPath,
+    string Type,
+    bool IsDirectory,
+    int PhysicalFileCount)
+{
+    public string Detail => IsDirectory
+        ? "文件夹"
+        : PhysicalFileCount > 1
+            ? $"{Type} · {PhysicalFileCount:N0} 个组成文件"
+            : Type;
+
+    public static AssetBrowserEntry Directory(string name, string fullPath)
+        => new(name, fullPath, "文件夹", true, 0);
+}
+
+public sealed record AssetDirectorySnapshot(
+    string DirectoryPath,
+    IReadOnlyList<AssetBrowserEntry> Items,
+    int DirectoryCount,
+    int ResourceCount);
+
 public sealed record DynamicAesKey(string Guid, string Key);
 
 public sealed record AesKeySet(string MainKey, IReadOnlyList<DynamicAesKey> DynamicKeys);
