@@ -1,0 +1,36 @@
+name: build
+
+on:
+  push:
+    branches: [ main, "feature/**" ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore src/WuwaAssetExplorer.App/WuwaAssetExplorer.App.csproj -r win-x64
+
+      - name: Build
+        run: dotnet build src/WuwaAssetExplorer.App/WuwaAssetExplorer.App.csproj -c Release -r win-x64 --no-restore -p:Platform=x64
+
+      - name: Publish portable folder
+        run: dotnet publish src/WuwaAssetExplorer.App/WuwaAssetExplorer.App.csproj -c Release -r win-x64 --no-restore -p:Platform=x64 -p:PublishProfile=win-x64
+
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: WuwaAssetExplorer-win-x64
+          path: artifacts/publish/win-x64/
+          if-no-files-found: error

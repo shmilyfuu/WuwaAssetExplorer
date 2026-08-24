@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+*.cache
+artifacts/
+publish/
+Data/
+*.db
+*.db-shm
+*.db-wal

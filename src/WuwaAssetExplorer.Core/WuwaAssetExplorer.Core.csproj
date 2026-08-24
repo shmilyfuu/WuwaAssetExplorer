@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>WuwaAssetExplorer.Core</AssemblyName>
+    <RootNamespace>WuwaAssetExplorer.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CUE4Parse" Version="1.2.2.202608" />
+  </ItemGroup>
+</Project>
