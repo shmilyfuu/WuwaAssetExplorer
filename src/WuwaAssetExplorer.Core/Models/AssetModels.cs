@@ -18,4 +18,19 @@ public sealed record AesKeySet(string MainKey, IReadOnlyList<DynamicAesKey> Dyna
 
 public sealed record AesFetchResult(AesKeySet Keys, bool UsedCache, DateTimeOffset RetrievedAt);
 
+public enum ArchiveLoadStage
+{
+    ScanningArchives,
+    MountingArchives,
+    BuildingCatalog,
+    Completed
+}
+
+public sealed record ArchiveLoadProgress(
+    ArchiveLoadStage Stage,
+    int MountedArchives,
+    int TotalArchives,
+    int IndexedFiles,
+    TimeSpan StageElapsed);
+
 public sealed record ArchiveLoadResult(int AssetCount, TimeSpan Elapsed);

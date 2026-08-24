@@ -16,6 +16,7 @@ public sealed partial class MainWindow : Window
     private readonly WuwaArchiveService _archiveService = new();
     private CancellationTokenSource? _searchCts;
     private AppSettings _settings = AppSettings.Default;
+    private bool _loadInProgress;
 
     public MainWindow()
     {
@@ -107,15 +108,19 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        _loadInProgress = true;
+        LoadProgressBar.Visibility = Visibility.Visible;
+        LoadProgressBar.IsIndeterminate = true;
         SetBusy(true, "正在读取包索引…");
+
         try
         {
             var resolved = WuwaPathResolver.ResolvePaksDirectory(paksPath);
             StatusText.Text = "正在获取 AES…";
             var aes = await _aesService.GetKeysAsync(endpoint);
 
-            StatusText.Text = "正在挂载鸣潮资源…";
-            var result = await _archiveService.LoadAsync(resolved, aes.Keys);
+            var progress = new Progress<ArchiveLoadProgress>(UpdateArchiveLoadProgress);
+            var result = await _archiveService.LoadAsync(resolved, aes.Keys, progress);
 
             PaksPathTextBox.Text = resolved;
             AssetCountText.Text = $"已加载 {result.AssetCount:N0} 个资源 · {result.Elapsed.TotalSeconds:F1}s";
@@ -138,8 +143,74 @@ public sealed partial class MainWindow : Window
         }
         finally
         {
+            _loadInProgress = false;
+            LoadProgressBar.IsIndeterminate = false;
+            LoadProgressBar.Visibility = Visibility.Collapsed;
             SetBusy(false, null);
         }
+    }
+
+    private void UpdateArchiveLoadProgress(ArchiveLoadProgress progress)
+    {
+        if (!_loadInProgress) return;
+
+        LoadProgressBar.Visibility = Visibility.Visible;
+
+        switch (progress.Stage)
+        {
+            case ArchiveLoadStage.ScanningArchives:
+                LoadProgressBar.IsIndeterminate = true;
+                StatusText.Text = "正在读取包索引…";
+                break;
+
+            case ArchiveLoadStage.MountingArchives:
+                if (progress.TotalArchives <= 0)
+                {
+                    LoadProgressBar.IsIndeterminate = true;
+                    StatusText.Text = "正在挂载鸣潮资源…";
+                    break;
+                }
+
+                LoadProgressBar.IsIndeterminate = false;
+                var fraction = Math.Clamp((double) progress.MountedArchives / progress.TotalArchives, 0, 1);
+                LoadProgressBar.Value = 8 + fraction * 82;
+                StatusText.Text = $"正在挂载 {progress.MountedArchives:N0}/{progress.TotalArchives:N0} · {fraction:P0}{FormatRemainingTime(progress)}";
+                break;
+
+            case ArchiveLoadStage.BuildingCatalog:
+                LoadProgressBar.IsIndeterminate = false;
+                LoadProgressBar.Value = 94;
+                StatusText.Text = $"正在建立资源目录 · {progress.IndexedFiles:N0} 项";
+                break;
+
+            case ArchiveLoadStage.Completed:
+                LoadProgressBar.IsIndeterminate = false;
+                LoadProgressBar.Value = 100;
+                StatusText.Text = "正在完成资源加载…";
+                break;
+        }
+    }
+
+    private static string FormatRemainingTime(ArchiveLoadProgress progress)
+    {
+        if (progress.TotalArchives <= 0 ||
+            progress.MountedArchives < 2 ||
+            progress.MountedArchives >= progress.TotalArchives ||
+            progress.StageElapsed.TotalSeconds < 0.8)
+        {
+            return string.Empty;
+        }
+
+        var remainingArchives = progress.TotalArchives - progress.MountedArchives;
+        var seconds = progress.StageElapsed.TotalSeconds * remainingArchives / progress.MountedArchives;
+        if (!double.IsFinite(seconds) || seconds <= 0) return string.Empty;
+
+        if (seconds < 60)
+        {
+            return $" · 约剩 {Math.Max(1, Math.Round(seconds)):N0} 秒";
+        }
+
+        return $" · 约剩 {seconds / 60:F1} 分钟";
     }
 
     private async void AssetSearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
@@ -195,6 +266,7 @@ public sealed partial class MainWindow : Window
             SettingsInfoBar.Message = $"已读取主密钥与 {result.Keys.DynamicKeys.Count:N0} 个动态密钥。";
             SettingsInfoBar.Severity = InfoBarSeverity.Success;
             SettingsInfoBar.IsOpen = true;
+            StatusText.Text = result.UsedCache ? "就绪 · AES 使用缓存" : "就绪 · AES 已更新";
         }
         catch (Exception ex)
         {
@@ -202,6 +274,7 @@ public sealed partial class MainWindow : Window
             SettingsInfoBar.Message = ex.Message;
             SettingsInfoBar.Severity = InfoBarSeverity.Error;
             SettingsInfoBar.IsOpen = true;
+            StatusText.Text = "AES 检查失败";
         }
         finally
         {

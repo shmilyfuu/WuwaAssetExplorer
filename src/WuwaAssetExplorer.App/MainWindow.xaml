@@ -113,11 +113,21 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock x:Name="AssetCountText" Text="未加载游戏" Style="{StaticResource CaptionTextBlockStyle}" />
                         <TextBlock x:Name="SearchCountText" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" />
-                        <TextBlock x:Name="StatusText"
-                                   Grid.Column="2"
-                                   HorizontalAlignment="Right"
-                                   Text="就绪"
-                                   Style="{StaticResource CaptionTextBlockStyle}" />
+                        <StackPanel Grid.Column="2"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Spacing="8">
+                            <ProgressBar x:Name="LoadProgressBar"
+                                         Width="140"
+                                         Minimum="0"
+                                         Maximum="100"
+                                         Visibility="Collapsed" />
+                            <TextBlock x:Name="StatusText"
+                                       VerticalAlignment="Center"
+                                       Text="就绪"
+                                       Style="{StaticResource CaptionTextBlockStyle}" />
+                        </StackPanel>
                     </Grid>
                 </Grid>
 

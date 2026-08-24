@@ -18,10 +18,18 @@ public sealed class WuwaArchiveService
     public async Task<ArchiveLoadResult> LoadAsync(
         string paksPath,
         AesKeySet aesKeys,
+        IProgress<ArchiveLoadProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         var resolved = WuwaPathResolver.ResolvePaksDirectory(paksPath);
         var stopwatch = Stopwatch.StartNew();
+
+        progress?.Report(new ArchiveLoadProgress(
+            ArchiveLoadStage.ScanningArchives,
+            0,
+            0,
+            0,
+            TimeSpan.Zero));
 
         var result = await Task.Run(() =>
         {
@@ -43,15 +51,60 @@ public sealed class WuwaArchiveService
             provider.Initialize();
             cancellationToken.ThrowIfCancellationRequested();
 
-            var keys = BuildKeys(aesKeys);
-            provider.SubmitKeys(keys);
-            provider.PostMount();
-            cancellationToken.ThrowIfCancellationRequested();
+            var totalArchives = provider.UnloadedVfs.Count + provider.MountedVfs.Count;
+            var mountedArchives = provider.MountedVfs.Count;
+            var mountStopwatch = Stopwatch.StartNew();
 
-            var paths = provider.Files.Keys.ToArray();
-            _catalog.Replace(paths);
-            _provider = provider;
-            return paths.Length;
+            progress?.Report(new ArchiveLoadProgress(
+                ArchiveLoadStage.MountingArchives,
+                mountedArchives,
+                totalArchives,
+                provider.Files.Count,
+                mountStopwatch.Elapsed));
+
+            EventHandler<int> onVfsMounted = (_, indexedFiles) =>
+            {
+                var mounted = Interlocked.Increment(ref mountedArchives);
+                progress?.Report(new ArchiveLoadProgress(
+                    ArchiveLoadStage.MountingArchives,
+                    mounted,
+                    totalArchives,
+                    indexedFiles,
+                    mountStopwatch.Elapsed));
+            };
+
+            provider.VfsMounted += onVfsMounted;
+            try
+            {
+                var keys = BuildKeys(aesKeys);
+                provider.SubmitKeys(keys);
+                provider.PostMount();
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var paths = provider.Files.Keys.ToArray();
+                progress?.Report(new ArchiveLoadProgress(
+                    ArchiveLoadStage.BuildingCatalog,
+                    mountedArchives,
+                    totalArchives,
+                    paths.Length,
+                    mountStopwatch.Elapsed));
+
+                _catalog.Replace(paths);
+                _provider = provider;
+
+                progress?.Report(new ArchiveLoadProgress(
+                    ArchiveLoadStage.Completed,
+                    mountedArchives,
+                    totalArchives,
+                    paths.Length,
+                    mountStopwatch.Elapsed));
+
+                return paths.Length;
+            }
+            finally
+            {
+                provider.VfsMounted -= onVfsMounted;
+            }
         }, cancellationToken);
 
         stopwatch.Stop();
