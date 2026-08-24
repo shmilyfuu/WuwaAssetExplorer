@@ -69,8 +69,11 @@
                                         Grid.Column="2"
                                         MinWidth="320"
                                         PlaceholderText="搜索资源名称或路径"
-                                        QueryIcon="Find"
-                                        TextChanged="AssetSearchBox_TextChanged" />
+                                        TextChanged="AssetSearchBox_TextChanged">
+                            <AutoSuggestBox.QueryIcon>
+                                <SymbolIcon Symbol="Find" />
+                            </AutoSuggestBox.QueryIcon>
+                        </AutoSuggestBox>
                         <ProgressRing x:Name="BusyRing"
                                       Grid.Column="3"
                                       Width="20"
