@@ -15,12 +15,12 @@ public static class Program
             WinRT.ComWrappersSupport.InitializeComWrappers();
             StartupLog.Write("ComWrappers initialized");
 
-            Application.Start(_ =>
+            Application.Start(_initializationParams =>
             {
                 StartupLog.Write("WinUI Application.Start callback entered");
                 var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
                 SynchronizationContext.SetSynchronizationContext(context);
-                _ = new App();
+                new App();
                 StartupLog.Write("App constructed");
             });
 
