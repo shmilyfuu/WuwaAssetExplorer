@@ -9,9 +9,14 @@ public sealed record AppSettings(string? PaksPath, string AesEndpoint)
 
 public static class PortablePaths
 {
-    public static string DataDirectory => Path.Combine(AppContext.BaseDirectory, "Data");
+    public const string RootEnvironmentVariable = "WUWA_ASSET_EXPLORER_ROOT";
+
+    public static string ApplicationRootDirectory => ResolveApplicationRootDirectory();
+    public static string DataDirectory => Path.Combine(ApplicationRootDirectory, "Data");
     public static string SettingsFile => Path.Combine(DataDirectory, "settings.json");
     public static string AesCacheFile => Path.Combine(DataDirectory, "aes-cache.json");
+    public static string StartupLogFile => Path.Combine(DataDirectory, "startup.log");
+    public static string ReferenceIndexFile => Path.Combine(DataDirectory, "index.db");
 
     public static void EnsureDataDirectory()
     {
@@ -19,6 +24,23 @@ public static class PortablePaths
         var probe = Path.Combine(DataDirectory, ".write-test");
         File.WriteAllText(probe, string.Empty);
         File.Delete(probe);
+    }
+
+    private static string ResolveApplicationRootDirectory()
+    {
+        var configuredRoot = Environment.GetEnvironmentVariable(RootEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(configuredRoot) && Path.IsPathFullyQualified(configuredRoot))
+        {
+            return Path.GetFullPath(configuredRoot);
+        }
+
+        var baseDirectory = new DirectoryInfo(Path.GetFullPath(AppContext.BaseDirectory));
+        if (baseDirectory.Name.Equals("Runtime", StringComparison.OrdinalIgnoreCase) && baseDirectory.Parent is not null)
+        {
+            return baseDirectory.Parent.FullName;
+        }
+
+        return baseDirectory.FullName;
     }
 }
 

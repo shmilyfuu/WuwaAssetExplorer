@@ -23,35 +23,85 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore
+      - name: Restore WinUI application
         run: dotnet restore src/WuwaAssetExplorer.App/WuwaAssetExplorer.App.csproj -r win-x64
 
-      - name: Build
+      - name: Restore launcher
+        run: dotnet restore src/WuwaAssetExplorer.Launcher/WuwaAssetExplorer.Launcher.csproj -r win-x64 -p:PublishAot=true
+
+      - name: Build WinUI application
         run: dotnet build src/WuwaAssetExplorer.App/WuwaAssetExplorer.App.csproj -c Release -r win-x64 --no-restore -p:Platform=x64
 
-      - name: Publish portable folder
+      - name: Publish WinUI runtime
         run: dotnet publish src/WuwaAssetExplorer.App/WuwaAssetExplorer.App.csproj -c Release -r win-x64 --no-restore -p:Platform=x64 -p:PublishProfile=win-x64
+
+      - name: Publish native launcher
+        run: dotnet publish src/WuwaAssetExplorer.Launcher/WuwaAssetExplorer.Launcher.csproj -c Release -r win-x64 --no-restore -p:PublishAot=true -p:StripSymbols=true -o artifacts/stage/Launcher
+
+      - name: Assemble portable folder
+        shell: pwsh
+        run: |
+          $runtimeStage = Resolve-Path 'artifacts/stage/Runtime'
+          $launcherStage = Resolve-Path 'artifacts/stage/Launcher'
+          $dist = Join-Path $PWD 'artifacts/publish/win-x64'
+          $runtime = Join-Path $dist 'Runtime'
+          $data = Join-Path $dist 'Data'
+
+          Remove-Item $dist -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item $runtime -ItemType Directory -Force | Out-Null
+          New-Item $data -ItemType Directory -Force | Out-Null
+
+          Copy-Item (Join-Path $runtimeStage '*') $runtime -Recurse -Force
+          Copy-Item (Join-Path $launcherStage 'WuwaAssetExplorer.exe') (Join-Path $dist 'WuwaAssetExplorer.exe') -Force
+          Set-Content (Join-Path $data 'README.txt') 'WuwaAssetExplorer stores settings, AES cache, diagnostics and indexes in this directory.' -Encoding utf8
 
       - name: Verify deployment layout
         shell: pwsh
         run: |
           $dist = Resolve-Path 'artifacts/publish/win-x64'
-          $exe = Join-Path $dist 'WuwaAssetExplorer.exe'
-          $pri = Join-Path $dist 'resources.pri'
+          $runtime = Join-Path $dist 'Runtime'
+          $data = Join-Path $dist 'Data'
+          $launcher = Join-Path $dist 'WuwaAssetExplorer.exe'
+          $runtimeExe = Join-Path $runtime 'WuwaAssetExplorer.exe'
+          $pri = Join-Path $runtime 'resources.pri'
+          $runtimeConfig = Join-Path $runtime 'WuwaAssetExplorer.runtimeconfig.json'
+          $bootstrap = Join-Path $runtime 'Microsoft.WindowsAppRuntime.Bootstrap.dll'
 
-          if (!(Test-Path $exe)) { throw 'WuwaAssetExplorer.exe is missing from publish output.' }
-          if (!(Test-Path $pri)) { throw 'resources.pri is missing from publish output.' }
+          if (!(Test-Path $launcher)) { throw 'Root launcher WuwaAssetExplorer.exe is missing.' }
+          if (!(Test-Path $runtimeExe)) { throw 'Runtime/WuwaAssetExplorer.exe is missing.' }
+          if (!(Test-Path $pri)) { throw 'Runtime/resources.pri is missing.' }
+          if (!(Test-Path $runtimeConfig)) { throw 'Runtime/WuwaAssetExplorer.runtimeconfig.json is missing.' }
+          if (!(Test-Path $bootstrap)) { throw 'Runtime/Microsoft.WindowsAppRuntime.Bootstrap.dll is missing.' }
+          if (!(Test-Path $data -PathType Container)) { throw 'Data directory is missing.' }
 
-          $localWinUiRuntime = @(Get-ChildItem $dist -File -Filter 'Microsoft.UI.Xaml.dll' -ErrorAction SilentlyContinue)
-          if ($localWinUiRuntime.Count -ne 0) {
-            throw 'Framework-dependent publish unexpectedly contains Microsoft.UI.Xaml.dll. Check WindowsAppSDKSelfContained overrides.'
+          $unexpectedRootFiles = @(Get-ChildItem $dist -File | Where-Object Name -ne 'WuwaAssetExplorer.exe')
+          if ($unexpectedRootFiles.Count -ne 0) {
+            throw "Unexpected files in application root: $($unexpectedRootFiles.Name -join ', ')"
           }
 
-          $files = @(Get-ChildItem $dist -File -Recurse)
-          $bytes = ($files | Measure-Object Length -Sum).Sum
-          Write-Host "Publish files: $($files.Count)"
+          $rootDlls = @(Get-ChildItem $dist -File -Filter '*.dll')
+          if ($rootDlls.Count -ne 0) { throw 'DLL files must remain inside Runtime.' }
+
+          $localWinUiRuntime = @(Get-ChildItem $runtime -File -Filter 'Microsoft.UI.Xaml.dll' -ErrorAction SilentlyContinue)
+          if ($localWinUiRuntime.Count -ne 0) {
+            throw 'Framework-dependent Runtime unexpectedly contains Microsoft.UI.Xaml.dll. Check WindowsAppSDKSelfContained overrides.'
+          }
+
+          $launcherHash = (Get-FileHash $launcher -Algorithm SHA256).Hash
+          $runtimeHash = (Get-FileHash $runtimeExe -Algorithm SHA256).Hash
+          if ($launcherHash -eq $runtimeHash) { throw 'Root launcher unexpectedly matches the WinUI runtime executable.' }
+
+          $rootFiles = @(Get-ChildItem $dist -File)
+          $runtimeFiles = @(Get-ChildItem $runtime -File -Recurse)
+          $allFiles = @(Get-ChildItem $dist -File -Recurse)
+          $bytes = ($allFiles | Measure-Object Length -Sum).Sum
+
+          Write-Host "Root files: $($rootFiles.Count)"
+          Write-Host "Runtime files: $($runtimeFiles.Count)"
+          Write-Host "Publish files: $($allFiles.Count)"
           Write-Host ("Publish size: {0:N2} MiB" -f ($bytes / 1MB))
-          Get-ChildItem $dist -File | Sort-Object Name | Select-Object Name,Length | Format-Table -AutoSize
+          Write-Host 'Application root:'
+          Get-ChildItem $dist | Sort-Object PSIsContainer,Name | Select-Object Name,PSIsContainer,Length | Format-Table -AutoSize
 
       - name: Upload portable build
         uses: actions/upload-artifact@v4

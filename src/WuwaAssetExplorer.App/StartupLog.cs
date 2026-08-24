@@ -1,9 +1,10 @@
+using WuwaAssetExplorer.Core.Services;
+
 namespace WuwaAssetExplorer;
 
 internal static class StartupLog
 {
     private static readonly object Gate = new();
-    private static readonly string LogPath = Path.Combine(AppContext.BaseDirectory, "Data", "startup.log");
 
     public static void Write(string message, Exception? exception = null)
     {
@@ -11,8 +12,8 @@ internal static class StartupLog
         {
             lock (Gate)
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-                using var writer = new StreamWriter(LogPath, append: true);
+                PortablePaths.EnsureDataDirectory();
+                using var writer = new StreamWriter(PortablePaths.StartupLogFile, append: true);
                 writer.Write(DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss.fff zzz"));
                 writer.Write(" | ");
                 writer.Write(message);
