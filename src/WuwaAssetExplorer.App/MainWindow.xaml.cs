@@ -1,6 +1,7 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 using Windows.Storage.Pickers;
@@ -14,9 +15,12 @@ public sealed partial class MainWindow : Window
     private readonly SettingsService _settingsService = new();
     private readonly AesEndpointService _aesService = new();
     private readonly WuwaArchiveService _archiveService = new();
+    private readonly HashSet<string> _loadedTreePaths = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _breadcrumbPaths = [];
     private CancellationTokenSource? _searchCts;
     private AppSettings _settings = AppSettings.Default;
     private bool _loadInProgress;
+    private string _currentDirectoryPath = string.Empty;
 
     public MainWindow()
     {
@@ -122,11 +126,12 @@ public sealed partial class MainWindow : Window
             var progress = new Progress<ArchiveLoadProgress>(UpdateArchiveLoadProgress);
             var result = await _archiveService.LoadAsync(resolved, aes.Keys, progress);
 
+            await InitializeResourceBrowserAsync();
+
             PaksPathTextBox.Text = resolved;
-            AssetCountText.Text = $"已加载 {result.AssetCount:N0} 个资源 · {result.Elapsed.TotalSeconds:F1}s";
-            SearchCountText.Text = string.Empty;
+            AssetCountText.Text = $"已加载 {result.AssetCount:N0} 个文件项 · {result.Elapsed.TotalSeconds:F1}s";
             StatusText.Text = aes.UsedCache ? "就绪 · AES 使用缓存" : "就绪";
-            ShowLoadMessage("鸣潮资源已加载", $"资源目录共 {result.AssetCount:N0} 项。现在可以直接搜索名称或完整路径。", InfoBarSeverity.Success);
+            ShowLoadMessage("鸣潮资源已加载", $"资源目录共 {result.AssetCount:N0} 个文件项。可以通过左侧目录浏览，也可以直接搜索名称或完整路径。", InfoBarSeverity.Success);
 
             _settings = new AppSettings(resolved, endpoint);
             await _settingsService.SaveAsync(_settings);
@@ -213,6 +218,117 @@ public sealed partial class MainWindow : Window
         return $" · 约剩 {seconds / 60:F1} 分钟";
     }
 
+    private async Task InitializeResourceBrowserAsync()
+    {
+        DirectoryTree.RootNodes.Clear();
+        _loadedTreePaths.Clear();
+        _currentDirectoryPath = string.Empty;
+
+        var root = await Task.Run(() => _archiveService.Browse(string.Empty));
+        foreach (var directory in root.Items.Where(x => x.IsDirectory))
+        {
+            DirectoryTree.RootNodes.Add(CreateDirectoryNode(directory));
+        }
+
+        ApplyDirectorySnapshot(root);
+    }
+
+    private static TreeViewNode CreateDirectoryNode(AssetBrowserEntry directory)
+    {
+        return new TreeViewNode
+        {
+            Content = new DirectoryNodeContent(directory.Name, directory.FullPath),
+            HasUnrealizedChildren = true
+        };
+    }
+
+    private async void DirectoryTree_Expanding(TreeView sender, TreeViewExpandingEventArgs args)
+    {
+        if (!_archiveService.IsLoaded || args.Node.Content is not DirectoryNodeContent content) return;
+        if (_loadedTreePaths.Contains(content.FullPath)) return;
+
+        try
+        {
+            var snapshot = await Task.Run(() => _archiveService.Browse(content.FullPath));
+            args.Node.Children.Clear();
+            foreach (var directory in snapshot.Items.Where(x => x.IsDirectory))
+            {
+                args.Node.Children.Add(CreateDirectoryNode(directory));
+            }
+
+            args.Node.HasUnrealizedChildren = false;
+            _loadedTreePaths.Add(content.FullPath);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "目录展开失败";
+            ShowLoadMessage("无法展开资源目录", ex.Message, InfoBarSeverity.Warning);
+        }
+    }
+
+    private async void DirectoryTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItem is not DirectoryNodeContent content) return;
+        await NavigateToDirectoryAsync(content.FullPath, clearSearch: true);
+    }
+
+    private async void DirectoryBreadcrumb_ItemClicked(BreadcrumbBar sender, BreadcrumbBarItemClickedEventArgs args)
+    {
+        if (args.Index < 0 || args.Index >= _breadcrumbPaths.Count) return;
+        await NavigateToDirectoryAsync(_breadcrumbPaths[args.Index], clearSearch: true);
+    }
+
+    private async void BrowserList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (BrowserList.SelectedItem is not AssetBrowserEntry { IsDirectory: true } directory) return;
+        await NavigateToDirectoryAsync(directory.FullPath, clearSearch: true);
+    }
+
+    private async Task NavigateToDirectoryAsync(string? directoryPath, bool clearSearch)
+    {
+        if (!_archiveService.IsLoaded) return;
+
+        var normalized = string.IsNullOrWhiteSpace(directoryPath)
+            ? string.Empty
+            : directoryPath.Replace('\\', '/').Trim('/');
+
+        if (clearSearch && !string.IsNullOrEmpty(AssetSearchBox.Text))
+        {
+            AssetSearchBox.Text = string.Empty;
+        }
+
+        var snapshot = await Task.Run(() => _archiveService.Browse(normalized));
+        _currentDirectoryPath = normalized;
+        ApplyDirectorySnapshot(snapshot);
+    }
+
+    private void ApplyDirectorySnapshot(AssetDirectorySnapshot snapshot)
+    {
+        BrowserList.ItemsSource = snapshot.Items;
+        SearchCountText.Text = $"{snapshot.DirectoryCount:N0} 个文件夹 · {snapshot.ResourceCount:N0} 个资源";
+        UpdateBreadcrumb(snapshot.DirectoryPath);
+    }
+
+    private void UpdateBreadcrumb(string directoryPath)
+    {
+        var labels = new List<string> { "资源根目录" };
+        _breadcrumbPaths.Clear();
+        _breadcrumbPaths.Add(string.Empty);
+
+        if (!string.IsNullOrEmpty(directoryPath))
+        {
+            var current = string.Empty;
+            foreach (var segment in directoryPath.Split('/', StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = string.IsNullOrEmpty(current) ? segment : current + "/" + segment;
+                labels.Add(segment);
+                _breadcrumbPaths.Add(current);
+            }
+        }
+
+        DirectoryBreadcrumb.ItemsSource = labels;
+    }
+
     private async void AssetSearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
         _searchCts?.Cancel();
@@ -223,8 +339,22 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(query))
         {
-            SearchResultsList.ItemsSource = null;
             SearchCountText.Text = string.Empty;
+            if (_archiveService.IsLoaded)
+            {
+                try
+                {
+                    await NavigateToDirectoryAsync(_currentDirectoryPath, clearSearch: false);
+                }
+                catch (Exception ex)
+                {
+                    StartupLog.Write("Failed to restore current directory after search", ex);
+                }
+            }
+            else
+            {
+                BrowserList.ItemsSource = null;
+            }
             return;
         }
 
@@ -250,9 +380,9 @@ public sealed partial class MainWindow : Window
         var results = await Task.Run(() => _archiveService.Search(query, 500), cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        SearchResultsList.ItemsSource = results;
+        BrowserList.ItemsSource = results;
         started.Stop();
-        SearchCountText.Text = $"{results.Count:N0} 项 · {started.Elapsed.TotalMilliseconds:F0} ms";
+        SearchCountText.Text = $"搜索结果 {results.Count:N0} 项 · {started.Elapsed.TotalMilliseconds:F0} ms";
     }
 
     private async void RefreshAes_Click(object sender, RoutedEventArgs e)
@@ -321,5 +451,10 @@ public sealed partial class MainWindow : Window
         LoadInfoBar.Message = message;
         LoadInfoBar.Severity = severity;
         LoadInfoBar.IsOpen = true;
+    }
+
+    private sealed record DirectoryNodeContent(string Name, string FullPath)
+    {
+        public override string ToString() => Name;
     }
 }
