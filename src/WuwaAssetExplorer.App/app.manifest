@@ -15,7 +15,6 @@
   </compatibility>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
-      <maxversiontested xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">10.0.26100.0</maxversiontested>
       <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
     </windowsSettings>
   </application>
