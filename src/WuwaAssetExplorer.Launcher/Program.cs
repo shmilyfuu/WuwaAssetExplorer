@@ -1,11 +1,11 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using WuwaAssetExplorer.Core.Services;
 
 namespace WuwaAssetExplorer.Launcher;
 
 internal static class Program
 {
+    private const string RootEnvironmentVariable = "WUWA_ASSET_EXPLORER_ROOT";
     private const uint MbIconError = 0x00000010;
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -34,7 +34,7 @@ internal static class Program
                 WorkingDirectory = runtimeDirectory,
                 UseShellExecute = false
             };
-            startInfo.Environment[PortablePaths.RootEnvironmentVariable] = applicationRoot;
+            startInfo.Environment[RootEnvironmentVariable] = applicationRoot;
 
             Process.Start(startInfo);
             return 0;
