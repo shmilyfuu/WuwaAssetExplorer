@@ -7,6 +7,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows-x64:
     runs-on: windows-latest
@@ -27,6 +31,27 @@ jobs:
 
       - name: Publish portable folder
         run: dotnet publish src/WuwaAssetExplorer.App/WuwaAssetExplorer.App.csproj -c Release -r win-x64 --no-restore -p:Platform=x64 -p:PublishProfile=win-x64
+
+      - name: Verify deployment layout
+        shell: pwsh
+        run: |
+          $dist = Resolve-Path 'artifacts/publish/win-x64'
+          $exe = Join-Path $dist 'WuwaAssetExplorer.exe'
+          $pri = Join-Path $dist 'resources.pri'
+
+          if (!(Test-Path $exe)) { throw 'WuwaAssetExplorer.exe is missing from publish output.' }
+          if (!(Test-Path $pri)) { throw 'resources.pri is missing from publish output.' }
+
+          $localWinUiRuntime = @(Get-ChildItem $dist -File -Filter 'Microsoft.UI.Xaml.dll' -ErrorAction SilentlyContinue)
+          if ($localWinUiRuntime.Count -ne 0) {
+            throw 'Framework-dependent publish unexpectedly contains Microsoft.UI.Xaml.dll. Check WindowsAppSDKSelfContained overrides.'
+          }
+
+          $files = @(Get-ChildItem $dist -File -Recurse)
+          $bytes = ($files | Measure-Object Length -Sum).Sum
+          Write-Host "Publish files: $($files.Count)"
+          Write-Host ("Publish size: {0:N2} MiB" -f ($bytes / 1MB))
+          Get-ChildItem $dist -File | Sort-Object Name | Select-Object Name,Length | Format-Table -AutoSize
 
       - name: Upload portable build
         uses: actions/upload-artifact@v4
