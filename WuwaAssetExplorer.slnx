@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="src/WuwaAssetExplorer.Core/WuwaAssetExplorer.Core.csproj" />
   <Project Path="src/WuwaAssetExplorer.App/WuwaAssetExplorer.App.csproj" />
+  <Project Path="src/WuwaAssetExplorer.Launcher/WuwaAssetExplorer.Launcher.csproj" />
 </Solution>
