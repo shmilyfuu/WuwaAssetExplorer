@@ -3,7 +3,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Channels;
 using CUE4Parse.FileProvider;
-using CUE4Parse.UE4.Objects.Core.Misc;
 using CUE4Parse.UE4.Objects.UObject;
 using Microsoft.Data.Sqlite;
 
@@ -75,8 +74,11 @@ internal sealed class ReferenceIndex
             using var connection = OpenConnection(createIfMissing: false);
             EnsureSchema(connection);
 
+            var storedSchema = ReadMetadata(connection, "schema_version");
             var storedFingerprint = ReadMetadata(connection, "container_fingerprint");
             var complete = string.Equals(ReadMetadata(connection, "complete"), "1", StringComparison.Ordinal);
+            var schemaMatches = string.Equals(storedSchema, SchemaVersion.ToString(), StringComparison.Ordinal);
+            var fingerprintMatches = schemaMatches && string.Equals(storedFingerprint, currentFingerprint, StringComparison.OrdinalIgnoreCase);
             var indexed = ExecuteScalarInt(connection, "SELECT COUNT(*) FROM indexed_packages;");
             var failed = ExecuteScalarInt(connection, "SELECT COUNT(*) FROM indexed_packages WHERE status = 2;");
             var edges = ExecuteScalarLong(connection, "SELECT COUNT(*) FROM hard_refs;");
@@ -84,7 +86,7 @@ internal sealed class ReferenceIndex
             return new ReferenceIndexStatus(
                 _databasePath,
                 true,
-                string.Equals(storedFingerprint, currentFingerprint, StringComparison.OrdinalIgnoreCase),
+                fingerprintMatches,
                 complete,
                 indexed,
                 failed,
@@ -140,7 +142,7 @@ internal sealed class ReferenceIndex
         if (rebuild || (initialStatus.Exists && !initialStatus.FingerprintMatches))
         {
             if (initialStatus.Exists && !initialStatus.FingerprintMatches)
-                Console.WriteLine("检测到鸣潮资源容器发生变化，将重建反向引用索引。");
+                Console.WriteLine("检测到鸣潮资源容器或索引结构发生变化，将重建反向引用索引。");
             Clear();
             initialStatus = GetStatus(currentFingerprint);
         }
@@ -483,19 +485,21 @@ internal static class AssetPathNormalizer
     public static string? CanonicalFromResolvedObjectPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return null;
-        var p = path.Trim().Trim('"', '\'', ' ').Replace('\\', '/');
+        var p = path.Trim().Trim('"').Replace('\\', '/');
 
         var firstQuote = p.IndexOf('\'');
         var lastQuote = p.LastIndexOf('\'');
         if (firstQuote >= 0 && lastQuote > firstQuote)
             p = p[(firstQuote + 1)..lastQuote];
+        else
+            p = p.Trim('\'');
 
         if (p.StartsWith("Client/Content/", StringComparison.OrdinalIgnoreCase))
             p = "/Game/" + p["Client/Content/".Length..];
         else if (p.StartsWith("Engine/Content/", StringComparison.OrdinalIgnoreCase))
             p = "/Engine/" + p["Engine/Content/".Length..];
 
-        if (!p.StartsWith('/', StringComparison.Ordinal)) return null;
+        if (!p.StartsWith("/", StringComparison.Ordinal)) return null;
         if (p.StartsWith("/Script/", StringComparison.OrdinalIgnoreCase) ||
             p.StartsWith("/Memory/", StringComparison.OrdinalIgnoreCase) ||
             p.StartsWith("/Temp/", StringComparison.OrdinalIgnoreCase))
