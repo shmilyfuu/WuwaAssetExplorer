@@ -101,9 +101,9 @@ internal sealed class ReferenceIndex
 
     public void Clear()
     {
-        TryDelete(_databasePath);
-        TryDelete(_databasePath + "-wal");
-        TryDelete(_databasePath + "-shm");
+        DeleteRequired(_databasePath);
+        DeleteRequired(_databasePath + "-wal");
+        DeleteRequired(_databasePath + "-shm");
     }
 
     public IReadOnlyList<string> QueryBackReferences(string targetCanonicalPackage, string? sourcePathFilter)
@@ -136,7 +136,7 @@ internal sealed class ReferenceIndex
         int jobs,
         bool rebuild,
         bool retryFailed,
-        Func<string, string?> canonicalizeResolvedObjectPath)
+        Func<ResolvedObject, string?> canonicalizeResolvedObject)
     {
         var initialStatus = GetStatus(currentFingerprint);
         if (rebuild || (initialStatus.Exists && !initialStatus.FingerprintMatches))
@@ -189,7 +189,6 @@ internal sealed class ReferenceIndex
 
         var sw = Stopwatch.StartNew();
         var processed = 0;
-        var failed = 0;
         long discoveredEdges = 0;
         long lastProgress = 0;
 
@@ -221,7 +220,7 @@ internal sealed class ReferenceIndex
 
                         if (resolved is null) continue;
                         string? canonical = null;
-                        try { canonical = canonicalizeResolvedObjectPath(resolved.GetPathName()); } catch { }
+                        try { canonical = canonicalizeResolvedObject(resolved); } catch { }
                         if (!string.IsNullOrWhiteSpace(canonical)) targets.Add(canonical);
                     }
 
@@ -230,7 +229,6 @@ internal sealed class ReferenceIndex
                 }
                 catch (Exception ex)
                 {
-                    Interlocked.Increment(ref failed);
                     batch = new PackageReferenceBatch(path, 2, 0, Array.Empty<string>(), TrimError(ex.Message));
                 }
 
@@ -459,9 +457,11 @@ internal sealed class ReferenceIndex
         return text.Length <= 500 ? text : text[..500];
     }
 
-    private static void TryDelete(string path)
+    private static void DeleteRequired(string path)
     {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
+        if (!File.Exists(path)) return;
+        File.Delete(path);
+        if (File.Exists(path)) throw new IOException($"无法删除旧索引文件：{path}");
     }
 
     private sealed record PackageReferenceBatch(string Source, int Status, int ImportCount, string[] Targets, string? Error);
