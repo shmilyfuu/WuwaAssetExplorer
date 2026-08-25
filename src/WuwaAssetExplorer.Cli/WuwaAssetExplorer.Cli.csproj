@@ -17,6 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="GlobalUsings.cs" />
     <Compile Include="ProgramV3.cs" />
     <Compile Include="ReferenceIndex.cs" />
   </ItemGroup>
