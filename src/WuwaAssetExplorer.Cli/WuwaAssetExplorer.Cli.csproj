@@ -17,12 +17,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="ProgramV2.cs" />
+    <Compile Include="ProgramV3.cs" />
+    <Compile Include="ReferenceIndex.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\WuwaAssetExplorer.Core\WuwaAssetExplorer.Core.csproj" />
     <PackageReference Include="CUE4Parse" Version="1.2.2.202608" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 </Project>
