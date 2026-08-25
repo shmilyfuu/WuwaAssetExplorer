@@ -243,8 +243,6 @@ public sealed partial class MainWindow : Window
             Content = new DirectoryNodeContent(directory.Name, directory.FullPath)
         };
 
-        // A lightweight placeholder makes the first expand gesture open immediately.
-        // It is replaced with real children after the directory snapshot is ready.
         node.Children.Add(new TreeViewNode { Content = LoadingNodeContent.Instance });
         return node;
     }
