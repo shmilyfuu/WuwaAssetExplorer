@@ -108,7 +108,7 @@ internal static class CommandRunner
 
                 case "search":
                     Require(tokens, 2, "search <名称或路径片段> [--max 100]");
-                    PrintList(session.Search(tokens[1], ReadIntOption(tokens, "--max", 100)));
+                    PrintList(session.Search(tokens[1], Math.Max(1, ReadIntOption(tokens, "--max", 100))));
                     return 0;
 
                 case "where":
@@ -135,7 +135,7 @@ internal static class CommandRunner
 
                 case "backrefs":
                     Require(tokens, 2, "backrefs <资源名或路径> [--path 路径过滤] [--max 200] [--jobs N] [--scan]");
-                    var backMax = ReadIntOption(tokens, "--max", 200);
+                    var backMax = Math.Max(1, ReadIntOption(tokens, "--max", 200));
                     var backJobs = Math.Clamp(ReadIntOption(tokens, "--jobs", DefaultIndexJobs), 1, 12);
                     var backPath = ReadStringOption(tokens, "--path");
                     var directScan = HasFlag(tokens, "--scan");
@@ -152,7 +152,7 @@ internal static class CommandRunner
                 case "grep":
                 case "rawgrep":
                     Require(tokens, 2, "grep <字符串> [--path 路径过滤] [--max 200] [--jobs 4]");
-                    var rawMax = ReadIntOption(tokens, "--max", 200);
+                    var rawMax = Math.Max(1, ReadIntOption(tokens, "--max", 200));
                     var rawJobs = Math.Clamp(ReadIntOption(tokens, "--jobs", 4), 1, 16);
                     var rawPath = ReadStringOption(tokens, "--path");
                     var raw = await session.FindRawStringMatchesAsync(tokens[1], rawPath, rawJobs);
@@ -218,7 +218,7 @@ internal static class CommandRunner
             return;
         }
 
-        Console.WriteLine($"状态：{(status.Ready ? "可用" : status.FingerprintMatches ? "未完成，可续建" : "资源版本已变化，需要重建")}");
+        Console.WriteLine($"状态：{(status.Ready ? "可用" : status.FingerprintMatches ? "未完成，可续建" : "资源版本或索引结构已变化，需要重建")}");
         Console.WriteLine($"已索引包：{status.IndexedPackages:N0}");
         Console.WriteLine($"解析失败包：{status.FailedPackages:N0}");
         Console.WriteLine($"硬引用边：{status.EdgeCount:N0}");
@@ -242,11 +242,11 @@ internal static class CommandRunner
       搜索已挂载资源目录。
 
   where <资源名或路径>
-      定位资源实际路径。
+      定位资源实际路径。支持短名、Client/Content 路径、/Game 路径和对象路径。
 
   imports <资源名或路径> [--assets]
       读取该包的 ImportMap。
-      --assets 仅显示标准化后的资源包依赖，便于排除 /Script 类型信息和重复对象路径。
+      --assets 只显示标准化后的资源包依赖，排除 /Script 类型信息和重复对象路径。
 
   refs <资源名或路径>
       解析导出对象并提取正向路径引用。
@@ -255,7 +255,7 @@ internal static class CommandRunner
       默认查询持久化 SQLite 反向引用索引。
       首次使用会自动建立全局 ImportMap 索引；之后同版本客户端直接查询索引。
       索引建立支持续建。--scan 可绕过索引执行一次直接扫描，用于诊断对比。
-      匹配使用完整标准化包路径，不再用短资源名作为全局命中条件。
+      全局命中优先使用完整标准化包路径；只有短名在整个客户端唯一时才允许作为补全路径的后备信息。
 
   index status
       查看索引状态、包数量、失败数量和硬引用边数量。
@@ -290,7 +290,8 @@ internal static class CommandRunner
   backrefs T_AMS_atlas_12001
   imports MI_Aimisi_Sub_40001_S --assets
 
-首次成功启动后会记住 Paks 路径；AES Endpoint 默认使用 wuwa-keys。
+索引和设置都保存在 WuwaAssetProbe.exe 同目录的 Data 文件夹。
+换新版程序时可手动把 Data 文件夹一起移动。
 """);
     }
 
@@ -380,8 +381,11 @@ internal sealed class ProbeSession
 
     public IReadOnlyList<string> ResolveMatches(string query, int maxResults)
     {
-        var normalized = query.Trim().Trim('"').Replace('\\', '/');
+        var normalized = NormalizeInputQuery(query);
         if (_provider.Files.ContainsKey(normalized)) return [normalized];
+        if (_provider.Files.ContainsKey(normalized + ".uasset")) return [normalized + ".uasset"];
+        if (_provider.Files.ContainsKey(normalized + ".umap")) return [normalized + ".umap"];
+
         var shortName = Path.GetFileNameWithoutExtension(normalized);
         if (_byShortName.TryGetValue(shortName, out var exact)) return exact.Take(maxResults).ToArray();
         return Search(normalized, maxResults);
@@ -417,7 +421,7 @@ internal sealed class ProbeSession
             {
                 var resolved = package.ResolvePackageIndex(new FPackageIndex(package, -(i + 1)));
                 if (resolved is null) continue;
-                var canonical = AssetPathNormalizer.CanonicalFromResolvedObjectPath(resolved.GetPathName());
+                var canonical = CanonicalizeResolvedObject(resolved);
                 if (!string.IsNullOrWhiteSpace(canonical)) results.Add(canonical);
             }
             catch { }
@@ -472,7 +476,7 @@ internal sealed class ProbeSession
             jobs,
             rebuild,
             retryFailed,
-            AssetPathNormalizer.CanonicalFromResolvedObjectPath);
+            CanonicalizeResolvedObject);
     }
 
     public async Task<IReadOnlyList<string>> FindBackReferencesAsync(string query, string? pathFilter, int jobs, bool directScan)
@@ -489,7 +493,7 @@ internal sealed class ProbeSession
             if (!status.Exists)
                 Console.WriteLine("尚未建立反向引用索引，首次 backrefs 将建立一次全局索引；后续查询直接复用。");
             else if (!status.FingerprintMatches)
-                Console.WriteLine("检测到客户端资源版本变化，反向引用索引需要更新。");
+                Console.WriteLine("检测到客户端资源版本或索引结构变化，反向引用索引需要更新。");
             else
                 Console.WriteLine("检测到未完成的反向引用索引，将从上次进度继续。");
 
@@ -503,7 +507,12 @@ internal sealed class ProbeSession
         Console.WriteLine($"索引查询：{targetCanonical}");
         if (!string.IsNullOrWhiteSpace(pathFilter)) Console.WriteLine($"路径过滤：{pathFilter}");
         if (status.FailedPackages > 0) Console.WriteLine($"提示：索引中有 {status.FailedPackages:N0} 个包解析失败，可用 index retry 再尝试。");
-        return _referenceIndex.QueryBackReferences(targetCanonical, pathFilter);
+
+        return _referenceIndex.QueryBackReferences(targetCanonical, pathFilter)
+            .Where(path => !path.Equals(targetPackage, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private async Task<IReadOnlyList<string>> FindSemanticBackReferencesDirectAsync(string query, string? pathFilter, int jobs)
@@ -538,7 +547,7 @@ internal sealed class ProbeSession
                     try { resolved = package.ResolvePackageIndex(new FPackageIndex(package, -(i + 1))); } catch { }
                     if (resolved is null) continue;
 
-                    var canonical = AssetPathNormalizer.CanonicalFromResolvedObjectPath(resolved.GetPathName());
+                    var canonical = CanonicalizeResolvedObject(resolved);
                     if (canonical is not null && canonical.Equals(targetCanonical, StringComparison.OrdinalIgnoreCase))
                     {
                         results.Add(path);
@@ -606,6 +615,52 @@ internal sealed class ProbeSession
         if (matches.Length == 1) return matches[0];
         if (matches.Length == 0) throw new FileNotFoundException($"没有定位到资源：{query}");
         throw new InvalidOperationException("资源名不唯一，请使用完整路径：" + Environment.NewLine + string.Join(Environment.NewLine, matches.Select(x => "  " + x)));
+    }
+
+    private string? CanonicalizeResolvedObject(ResolvedObject resolved)
+    {
+        var canonical = AssetPathNormalizer.CanonicalFromResolvedObjectPath(resolved.GetPathName());
+        if (!string.IsNullOrWhiteSpace(canonical)) return canonical;
+
+        var shortName = resolved.Name.ToString();
+        if (string.IsNullOrWhiteSpace(shortName)) return null;
+        if (!_byShortName.TryGetValue(shortName, out var matches)) return null;
+
+        var packages = matches
+            .Where(IsPackagePath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return packages.Length == 1 ? AssetPathNormalizer.CanonicalFromPackageFile(packages[0]) : null;
+    }
+
+    private static string NormalizeInputQuery(string query)
+    {
+        var normalized = query.Trim().Trim('"', '\'', ' ').Replace('\\', '/');
+
+        var firstQuote = normalized.IndexOf('\'');
+        var lastQuote = normalized.LastIndexOf('\'');
+        if (firstQuote >= 0 && lastQuote > firstQuote)
+            normalized = normalized[(firstQuote + 1)..lastQuote];
+
+        if (normalized.StartsWith("/Game/", StringComparison.OrdinalIgnoreCase))
+            normalized = "Client/Content/" + normalized["/Game/".Length..];
+        else if (normalized.StartsWith("/Engine/", StringComparison.OrdinalIgnoreCase))
+            normalized = "Engine/Content/" + normalized["/Engine/".Length..];
+
+        if (!normalized.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase) &&
+            !normalized.EndsWith(".umap", StringComparison.OrdinalIgnoreCase))
+        {
+            var slash = normalized.LastIndexOf('/');
+            var dot = normalized.IndexOf('.', Math.Max(0, slash + 1));
+            var colon = normalized.IndexOf(':', Math.Max(0, slash + 1));
+            var cut = -1;
+            if (dot >= 0 && colon >= 0) cut = Math.Min(dot, colon);
+            else if (dot >= 0) cut = dot;
+            else if (colon >= 0) cut = colon;
+            if (cut >= 0) normalized = normalized[..cut];
+        }
+
+        return normalized.TrimEnd('/');
     }
 
     private static bool IsPackagePath(string p)
