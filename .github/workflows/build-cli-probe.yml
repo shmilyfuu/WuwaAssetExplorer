@@ -1,0 +1,68 @@
+name: Build Quick Asset Probe
+
+on:
+  push:
+    branches: [ "cli/quick-asset-probe" ]
+    paths:
+      - 'src/WuwaAssetExplorer.Cli/**'
+      - 'src/WuwaAssetExplorer.Core/**'
+      - 'CLI-README.md'
+      - '.github/workflows/build-cli-probe.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore src/WuwaAssetExplorer.Cli/WuwaAssetExplorer.Cli.csproj -r win-x64
+
+      - name: Publish single-file probe
+        run: >-
+          dotnet publish src/WuwaAssetExplorer.Cli/WuwaAssetExplorer.Cli.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          --no-restore
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:PublishTrimmed=false
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o artifacts/cli/win-x64
+
+      - name: Verify output
+        shell: pwsh
+        run: |
+          $dist = Resolve-Path 'artifacts/cli/win-x64'
+          $exe = Join-Path $dist 'WuwaAssetProbe.exe'
+          if (!(Test-Path $exe)) { throw 'WuwaAssetProbe.exe missing.' }
+          Copy-Item '.\CLI-README.md' (Join-Path $dist 'README.txt') -Force
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  WuwaAssetProbe.exe" | Set-Content -Encoding ascii (Join-Path $dist 'WuwaAssetProbe.exe.sha256')
+          Get-ChildItem $dist -File | Sort-Object Length -Descending | Format-Table Name,Length
+
+      - name: Upload probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: WuwaAssetProbe-win-x64
+          path: artifacts/cli/win-x64/
+          retention-days: 14
+          if-no-files-found: error
