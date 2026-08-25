@@ -18,6 +18,6 @@
   <ItemGroup>
     <ProjectReference Include="..\WuwaAssetExplorer.Core\WuwaAssetExplorer.Core.csproj" />
     <PackageReference Include="CUE4Parse" Version="1.2.2.202608" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 </Project>
