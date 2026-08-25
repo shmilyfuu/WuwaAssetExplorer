@@ -13,7 +13,12 @@
     <PublishTrimmed>false</PublishTrimmed>
     <DebugType>None</DebugType>
     <DebugSymbols>false</DebugSymbols>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="ProgramV2.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\WuwaAssetExplorer.Core\WuwaAssetExplorer.Core.csproj" />
