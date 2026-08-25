@@ -81,8 +81,33 @@ catch (Exception ex)
 
 static List<string> Tokenize(string commandLine)
 {
-    var matches = Regex.Matches(commandLine, @"(?:[^\s\"]+|\"[^\"]*\")+");
-    return matches.Select(m => m.Value.Trim().Trim('"')).Where(x => x.Length > 0).ToList();
+    var tokens = new List<string>();
+    var current = new StringBuilder();
+    var inQuotes = false;
+
+    foreach (var c in commandLine)
+    {
+        if (c == '"')
+        {
+            inQuotes = !inQuotes;
+            continue;
+        }
+
+        if (char.IsWhiteSpace(c) && !inQuotes)
+        {
+            if (current.Length > 0)
+            {
+                tokens.Add(current.ToString());
+                current.Clear();
+            }
+            continue;
+        }
+
+        current.Append(c);
+    }
+
+    if (current.Length > 0) tokens.Add(current.ToString());
+    return tokens;
 }
 
 internal static class CommandRunner
@@ -414,7 +439,6 @@ internal sealed class ProbeSession : IAsyncDisposable
         if (matches.Length == 1) return matches[0];
         if (matches.Length == 0)
         {
-            // Allow CUE4Parse virtual paths such as /Game/... as a final attempt.
             try
             {
                 _provider.LoadPackage(query);
@@ -511,7 +535,6 @@ internal sealed record CliSettings(string? PaksPath, string? Endpoint)
         }
         catch
         {
-            // Portable settings are convenience only; a read-only folder must not block use of the probe.
         }
     }
 }
