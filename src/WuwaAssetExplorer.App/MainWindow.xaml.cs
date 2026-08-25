@@ -16,6 +16,7 @@ public sealed partial class MainWindow : Window
     private readonly AesEndpointService _aesService = new();
     private readonly WuwaArchiveService _archiveService = new();
     private readonly HashSet<string> _loadedTreePaths = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Task> _treeLoadTasks = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _breadcrumbPaths = [];
     private CancellationTokenSource? _searchCts;
     private AppSettings _settings = AppSettings.Default;
@@ -222,6 +223,7 @@ public sealed partial class MainWindow : Window
     {
         DirectoryTree.RootNodes.Clear();
         _loadedTreePaths.Clear();
+        _treeLoadTasks.Clear();
         _currentDirectoryPath = string.Empty;
 
         var root = await Task.Run(() => _archiveService.Browse(string.Empty));
@@ -231,33 +233,64 @@ public sealed partial class MainWindow : Window
         }
 
         ApplyDirectorySnapshot(root);
+        DirectoryTree.SelectedNode = null;
     }
 
     private static TreeViewNode CreateDirectoryNode(AssetBrowserEntry directory)
     {
-        return new TreeViewNode
+        var node = new TreeViewNode
         {
-            Content = new DirectoryNodeContent(directory.Name, directory.FullPath),
-            HasUnrealizedChildren = true
+            Content = new DirectoryNodeContent(directory.Name, directory.FullPath)
         };
+
+        // A lightweight placeholder makes the first expand gesture open immediately.
+        // It is replaced with real children after the directory snapshot is ready.
+        node.Children.Add(new TreeViewNode { Content = LoadingNodeContent.Instance });
+        return node;
+    }
+
+    private async Task EnsureNodeChildrenLoadedAsync(TreeViewNode node)
+    {
+        if (node.Content is not DirectoryNodeContent content) return;
+        if (_loadedTreePaths.Contains(content.FullPath)) return;
+
+        if (_treeLoadTasks.TryGetValue(content.FullPath, out var existingTask))
+        {
+            await existingTask;
+            return;
+        }
+
+        var loadTask = LoadNodeChildrenAsync(node, content);
+        _treeLoadTasks[content.FullPath] = loadTask;
+        try
+        {
+            await loadTask;
+        }
+        finally
+        {
+            _treeLoadTasks.Remove(content.FullPath);
+        }
+    }
+
+    private async Task LoadNodeChildrenAsync(TreeViewNode node, DirectoryNodeContent content)
+    {
+        var snapshot = await Task.Run(() => _archiveService.Browse(content.FullPath));
+        node.Children.Clear();
+        foreach (var directory in snapshot.Items.Where(x => x.IsDirectory))
+        {
+            node.Children.Add(CreateDirectoryNode(directory));
+        }
+
+        _loadedTreePaths.Add(content.FullPath);
     }
 
     private async void DirectoryTree_Expanding(TreeView sender, TreeViewExpandingEventArgs args)
     {
-        if (!_archiveService.IsLoaded || args.Node.Content is not DirectoryNodeContent content) return;
-        if (_loadedTreePaths.Contains(content.FullPath)) return;
+        if (!_archiveService.IsLoaded || args.Node.Content is not DirectoryNodeContent) return;
 
         try
         {
-            var snapshot = await Task.Run(() => _archiveService.Browse(content.FullPath));
-            args.Node.Children.Clear();
-            foreach (var directory in snapshot.Items.Where(x => x.IsDirectory))
-            {
-                args.Node.Children.Add(CreateDirectoryNode(directory));
-            }
-
-            args.Node.HasUnrealizedChildren = false;
-            _loadedTreePaths.Add(content.FullPath);
+            await EnsureNodeChildrenLoadedAsync(args.Node);
         }
         catch (Exception ex)
         {
@@ -269,7 +302,33 @@ public sealed partial class MainWindow : Window
     private async void DirectoryTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
     {
         if (args.InvokedItem is not DirectoryNodeContent content) return;
-        await NavigateToDirectoryAsync(content.FullPath, clearSearch: true);
+        await NavigateToDirectoryAsync(content.FullPath, clearSearch: true, syncTree: false);
+    }
+
+    private async void DirectoryTree_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        var node = DirectoryTree.SelectedNode;
+        if (node?.Content is not DirectoryNodeContent content) return;
+
+        try
+        {
+            if (node.IsExpanded)
+            {
+                node.IsExpanded = false;
+            }
+            else
+            {
+                await EnsureNodeChildrenLoadedAsync(node);
+                node.IsExpanded = true;
+            }
+
+            await NavigateToDirectoryAsync(content.FullPath, clearSearch: true, syncTree: false);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "目录展开失败";
+            ShowLoadMessage("无法展开资源目录", ex.Message, InfoBarSeverity.Warning);
+        }
     }
 
     private async void DirectoryBreadcrumb_ItemClicked(BreadcrumbBar sender, BreadcrumbBarItemClickedEventArgs args)
@@ -284,7 +343,10 @@ public sealed partial class MainWindow : Window
         await NavigateToDirectoryAsync(directory.FullPath, clearSearch: true);
     }
 
-    private async Task NavigateToDirectoryAsync(string? directoryPath, bool clearSearch)
+    private async Task NavigateToDirectoryAsync(
+        string? directoryPath,
+        bool clearSearch,
+        bool syncTree = true)
     {
         if (!_archiveService.IsLoaded) return;
 
@@ -300,6 +362,61 @@ public sealed partial class MainWindow : Window
         var snapshot = await Task.Run(() => _archiveService.Browse(normalized));
         _currentDirectoryPath = normalized;
         ApplyDirectorySnapshot(snapshot);
+
+        if (syncTree)
+        {
+            await SyncTreeToDirectoryAsync(normalized);
+        }
+    }
+
+    private async Task SyncTreeToDirectoryAsync(string directoryPath)
+    {
+        if (string.IsNullOrEmpty(directoryPath))
+        {
+            DirectoryTree.SelectedNode = null;
+            return;
+        }
+
+        var segments = directoryPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var currentPath = string.Empty;
+        TreeViewNode? currentNode = null;
+
+        for (var i = 0; i < segments.Length; i++)
+        {
+            currentPath = string.IsNullOrEmpty(currentPath)
+                ? segments[i]
+                : currentPath + "/" + segments[i];
+
+            if (i == 0)
+            {
+                currentNode = FindNodeByPath(DirectoryTree.RootNodes, currentPath);
+            }
+            else
+            {
+                if (currentNode is null) return;
+                await EnsureNodeChildrenLoadedAsync(currentNode);
+                currentNode.IsExpanded = true;
+                currentNode = FindNodeByPath(currentNode.Children, currentPath);
+            }
+
+            if (currentNode is null) return;
+        }
+
+        DirectoryTree.SelectedNode = currentNode;
+    }
+
+    private static TreeViewNode? FindNodeByPath(IEnumerable<TreeViewNode> nodes, string fullPath)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Content is DirectoryNodeContent content &&
+                content.FullPath.Equals(fullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return node;
+            }
+        }
+
+        return null;
     }
 
     private void ApplyDirectorySnapshot(AssetDirectorySnapshot snapshot)
@@ -456,5 +573,11 @@ public sealed partial class MainWindow : Window
     private sealed record DirectoryNodeContent(string Name, string FullPath)
     {
         public override string ToString() => Name;
+    }
+
+    private sealed class LoadingNodeContent
+    {
+        public static LoadingNodeContent Instance { get; } = new();
+        public override string ToString() => "正在加载…";
     }
 }
