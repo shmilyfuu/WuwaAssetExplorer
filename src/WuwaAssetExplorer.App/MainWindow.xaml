@@ -81,29 +81,69 @@
                                       IsActive="False" />
                     </Grid>
 
-                    <ListView x:Name="SearchResultsList"
-                              Grid.Row="2"
-                              SelectionMode="Single">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Padding="4,6">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Text="{Binding Name}"
-                                               Style="{StaticResource BodyStrongTextBlockStyle}"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Row="1"
-                                               Margin="0,2,0,0"
-                                               Opacity="0.72"
-                                               Text="{Binding FullPath}"
-                                               TextTrimming="CharacterEllipsis"
-                                               Style="{StaticResource CaptionTextBlockStyle}" />
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
+                    <Grid Grid.Row="2" ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="250" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0"
+                                Padding="0,4,8,4"
+                                BorderThickness="0,0,1,0"
+                                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+                            <TreeView x:Name="DirectoryTree"
+                                      SelectionMode="Single"
+                                      Expanding="DirectoryTree_Expanding"
+                                      ItemInvoked="DirectoryTree_ItemInvoked"
+                                      DoubleTapped="DirectoryTree_DoubleTapped" />
+                        </Border>
+
+                        <Grid Grid.Column="1">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <BreadcrumbBar x:Name="DirectoryBreadcrumb"
+                                           Margin="0,0,0,6"
+                                           ItemClicked="DirectoryBreadcrumb_ItemClicked" />
+
+                            <ListView x:Name="BrowserList"
+                                      Grid.Row="1"
+                                      SelectionMode="Single"
+                                      DoubleTapped="BrowserList_DoubleTapped">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Padding="6,7" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Text="{Binding Name}"
+                                                       Style="{StaticResource BodyStrongTextBlockStyle}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Detail}"
+                                                       Opacity="0.78"
+                                                       Style="{StaticResource CaptionTextBlockStyle}" />
+                                            <TextBlock Grid.Row="1"
+                                                       Grid.ColumnSpan="2"
+                                                       Margin="0,2,0,0"
+                                                       Opacity="0.68"
+                                                       Text="{Binding FullPath}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Style="{StaticResource CaptionTextBlockStyle}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Grid>
 
                     <Grid Grid.Row="3" Margin="0,10,0,0" ColumnSpacing="12">
                         <Grid.ColumnDefinitions>
@@ -138,7 +178,7 @@
                                  IsClosable="False"
                                  Severity="Informational"
                                  Title="下一阶段功能"
-                                 Message="资源目录加载与极速搜索验证完成后，将在这里加入持久化正向/反向引用索引、递归引用树与两项资源之间的路径查询。" />
+                                 Message="资源浏览目录验证后，将在这里加入持久化正向/反向引用索引、递归引用树与两项资源之间的路径查询。" />
                     </StackPanel>
                 </Grid>
 

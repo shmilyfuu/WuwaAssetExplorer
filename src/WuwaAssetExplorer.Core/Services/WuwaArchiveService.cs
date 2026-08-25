@@ -111,7 +111,10 @@ public sealed class WuwaArchiveService
         return new ArchiveLoadResult(result, stopwatch.Elapsed);
     }
 
-    public IReadOnlyList<AssetEntry> Search(string query, int maxResults = 400)
+    public AssetDirectorySnapshot Browse(string? directoryPath)
+        => _catalog.Browse(directoryPath);
+
+    public IReadOnlyList<AssetBrowserEntry> Search(string query, int maxResults = 400)
         => _catalog.Search(query, maxResults);
 
     private static IReadOnlyList<KeyValuePair<FGuid, FAesKey>> BuildKeys(AesKeySet source)

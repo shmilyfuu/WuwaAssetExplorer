@@ -9,5 +9,6 @@
     <DebugType>None</DebugType>
     <AssemblyName>WuwaAssetExplorer</AssemblyName>
     <RootNamespace>WuwaAssetExplorer.Launcher</RootNamespace>
+    <ApplicationIcon>..\WuwaAssetExplorer.App\Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 </Project>
