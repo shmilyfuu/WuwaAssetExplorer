@@ -94,7 +94,8 @@
                             <TreeView x:Name="DirectoryTree"
                                       SelectionMode="Single"
                                       Expanding="DirectoryTree_Expanding"
-                                      ItemInvoked="DirectoryTree_ItemInvoked" />
+                                      ItemInvoked="DirectoryTree_ItemInvoked"
+                                      DoubleTapped="DirectoryTree_DoubleTapped" />
                         </Border>
 
                         <Grid Grid.Column="1">
