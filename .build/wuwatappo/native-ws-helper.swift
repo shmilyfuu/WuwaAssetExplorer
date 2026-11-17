@@ -159,7 +159,7 @@ private final class NativeSocket: NSObject, URLSessionWebSocketDelegate, URLSess
     }
 }
 
-let bridge = NativeSocket()
+private let bridge = NativeSocket()
 DispatchQueue.global(qos: .userInitiated).async {
     while let line = readLine() {
         guard let bytes = line.data(using: .utf8),
