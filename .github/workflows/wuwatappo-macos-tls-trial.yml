@@ -62,37 +62,68 @@ jobs:
             if [ "$attempt" = 3 ]; then exit 1; fi
             sleep 8
           done
-      - name: Export official and integrated room source for diagnosis
-        uses: actions/upload-artifact@v4
-        with:
-          name: wuwatappo-1.3.1-room-ui-source
-          path: |
-            source/macos/frontend/assets/index-BFg5ADH5.js
-            source/macos/build/frontend/assets/index-BFg5ADH5.js
-            source/macos/build/frontend/assets/index-CM6qA69G.js
-          if-no-files-found: error
-          retention-days: 3
+      - name: Preserve safe native WebSocket failure reasons in app log
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('source/macos/scripts/mac-websocket.js')
+          s = p.read_text()
+          anchor = '  const encoder = new TextEncoder();'
+          helper = r"""
+            function socketFailureCode(error) {
+              const message = String(error?.message ?? error ?? '');
+              const http = /^WebSocket handshake rejected \\(HTTP (\\d{3})\\)$/.exec(message);
+              if (http) return 'http_' + http[1];
+              if (message === 'WebSocket TLS connection failed') return 'tls';
+              if (message === 'WebSocket network connection failed') return 'network';
+              if (message === 'WebSocket protocol connection failed') return 'protocol';
+              if (message === 'WebSocket connection timed out') return 'timeout';
+              if (message === 'WebSocket closed before connecting') return 'closed_before_connect';
+              if (message.includes('本地全图鉴开启时不能连接联机房间')) return 'local_atlas_block';
+              if (message.includes("Only the current region's official WebSocket endpoint")) return 'endpoint_validation';
+              if (message.includes('WebSocket access requires a trusted app window')) return 'caller_validation';
+              if (message.includes('WebSocket id already exists')) return 'duplicate_socket';
+              if (message.includes('WebSocket state is unavailable')) return 'socket_state';
+              if (message.includes('Native WebSocket bridge is unavailable')) return 'missing_native_bridge';
+              return 'unknown';
+            }
+            function logSocketFailure(stage, error) {
+              const code = socketFailureCode(error);
+              window.__TAURI__?.core?.invoke('write_app_log', {
+                level: 'error', message: '[NATIVE_WS] stage=' + stage + ' reason=' + code
+              }).catch(() => {});
+            }
+          """.strip('\n')
+          assert s.count(anchor) == 1
+          s = s.replace(anchor, anchor + '\n' + helper, 1)
+          old = 'this.#queue = this.#creation.catch(() => this.#fail());'
+          new = 'this.#queue = this.#creation.catch(error => { logSocketFailure("connect_invoke", error); this.#fail(); });'
+          assert s.count(old) == 1
+          s = s.replace(old, new, 1)
+          old = "        console.warn('[macOS] WebSocket connection failed:', event.message);"
+          new = "        logSocketFailure('socket_event', event.message);\n" + old
+          assert s.count(old) == 1
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+          node --check source/macos/scripts/mac-websocket.js
       - name: Run macOS frontend and native tests
-        if: false
         working-directory: source
         run: |
           npm test
           npm run test:fullatlas
           npm run test:rust
       - name: Build macOS application
-        if: false
         working-directory: source
         run: npm run build -- -- --locked
       - name: Verify and package DMG
-        if: false
         working-directory: source
         run: |
           npm run package
           shasum -a 256 dist/*.dmg > dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
-        if: false
         with:
-          name: WuwaTappo-Full-CN-Community-1.3.1-macOS-arm64-native-tls
+          name: WuwaTappo-Full-CN-Community-1.3.1-macOS-arm64-socket-diagnostics
           path: |
             source/dist/*.dmg
             source/dist/SHA256SUMS.txt
