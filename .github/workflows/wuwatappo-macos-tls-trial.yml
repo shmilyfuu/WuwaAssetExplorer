@@ -43,6 +43,7 @@ jobs:
           rustup toolchain install 1.97.1 --profile minimal
           rustup default 1.97.1
           brew install sevenzip osslsigncode
+          cargo metadata --manifest-path source/macos/src-tauri/Cargo.toml --format-version 1 > /dev/null
       - name: Install dependencies
         working-directory: source
         run: npm ci
