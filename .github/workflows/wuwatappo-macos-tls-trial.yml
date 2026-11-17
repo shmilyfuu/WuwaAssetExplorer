@@ -72,7 +72,7 @@ jobs:
           helper = r"""
             function socketFailureCode(error) {
               const message = String(error?.message ?? error ?? '');
-              const http = /^WebSocket handshake rejected \\(HTTP (\\d{3})\\)$/.exec(message);
+              const http = /^WebSocket handshake rejected [(]HTTP ([0-9]{3})[)]$/.exec(message);
               if (http) return 'http_' + http[1];
               if (message === 'WebSocket TLS connection failed') return 'tls';
               if (message === 'WebSocket network connection failed') return 'network';
