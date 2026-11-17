@@ -44,12 +44,24 @@ jobs:
           rustup default 1.97.1
           brew install sevenzip osslsigncode
           cargo metadata --manifest-path source/macos/src-tauri/Cargo.toml --format-version 1 > /dev/null
+      - uses: actions/cache@v4
+        with:
+          path: source/macos/.work/installers
+          key: wuwatappo-cn-installer-1.0.4-eb4e6d2103c222297508837a5ca92eeaa058891c9f1e2e7bf034c23f37668e26
       - name: Install dependencies
         working-directory: source
         run: npm ci
       - name: Prepare verified official CN frontend
         working-directory: source
-        run: npm run setup
+        run: |
+          for attempt in 1 2 3; do
+            if npm run setup; then
+              exit 0
+            fi
+            echo "Official CDN download attempt $attempt failed."
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            sleep 8
+          done
       - name: Run macOS frontend and native tests
         working-directory: source
         run: |
