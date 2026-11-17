@@ -18,6 +18,9 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: '13.0'
       CARGO_INCREMENTAL: '0'
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Fetch pinned upstream release
         run: |
           git clone --depth 1 --branch v1.3.1 https://github.com/alexzhong233/WuwaTappo-Full-Community.git source
