@@ -59,7 +59,7 @@ private final class NativeSocket: NSObject, URLSessionWebSocketDelegate, URLSess
             urlRequest.timeoutInterval = 10
             let socket = protocols.isEmpty
                 ? session.webSocketTask(with: urlRequest)
-                : session.webSocketTask(with: urlRequest, protocols: protocols)
+                : session.webSocketTask(with: url, protocols: protocols)
             task = socket
             socket.resume()
         case "send":
