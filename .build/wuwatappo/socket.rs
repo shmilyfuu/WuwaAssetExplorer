@@ -101,7 +101,7 @@ fn caller_key(window: &WebviewWindow, id: &str) -> Result<(String, String), Stri
 
 fn protocol_token(value: &str) -> bool {
     !value.is_empty()
-        && value.bytes().all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_\u0060|~".contains(&b))
+        && value.bytes().all(|b| b.is_ascii_alphanumeric() || b"!#$%&\'*+-.^_`|~".contains(&b))
 }
 
 fn validate_protocols(protocols: &[String]) -> Result<(), String> {
