@@ -126,7 +126,7 @@ async fn send_json(stdin: &mut ChildStdin, value: Value) -> Result<(), String> {
     let mut bytes = serde_json::to_vec(&value).map_err(|_| "WebSocket message encode failed")?;
     bytes.push(b'\n');
     stdin.write_all(&bytes).await.map_err(|_| "WebSocket helper closed")?;
-    stdin.flush().await.map_err(|_| "WebSocket helper closed")
+    stdin.flush().await.map_err(|_| "WebSocket helper closed".to_string())
 }
 
 fn decode_event(value: &Value) -> Option<SocketEvent> {
